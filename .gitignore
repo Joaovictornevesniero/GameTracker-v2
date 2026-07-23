@@ -1,0 +1,22 @@
+# Banco de dados
+gametracker.db
+
+# Cache do Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Ambiente virtual
+venv/
+.venv/
+
+# VS Code
+.vscode/
+
+# Distribuição
+dist/
+build/
+*.egg-info/
+
+# Logs
+*.log

@@ -1,0 +1,30 @@
+CREATE TABLE IF NOT EXISTS categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS games (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    executable TEXT NOT NULL,
+    category_id INTEGER REFERENCES categories(id),
+    platform TEXT DEFAULT 'PC',
+    notes TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    game_id INTEGER NOT NULL REFERENCES games(id),
+    started_at DATETIME NOT NULL,
+    ended_at DATETIME,
+    raw_seconds INTEGER DEFAULT 0,
+    afk_seconds INTEGER DEFAULT 0,
+    valid_seconds INTEGER DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT
+);
+
