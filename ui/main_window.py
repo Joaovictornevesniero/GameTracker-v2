@@ -1,96 +1,81 @@
-from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout,
-                                QHBoxLayout, QPushButton, QStackedWidget)
+from PySide6.QtCore import QTimer
+from PySide6.QtWidgets import (QButtonGroup, QHBoxLayout, QMainWindow, QPushButton,
+                               QStackedWidget, QVBoxLayout, QWidget)
+
+from ui.common import app_icon, label
 from ui.dashboard import Dashboard
-from ui.games_list import GamesList
-from ui.history import History
+from ui.games import GamesPage
+from ui.history import HistoryPage
+
 
 class MainWindow(QMainWindow):
     def __init__(self, monitor):
         super().__init__()
         self.monitor = monitor
         self.setWindowTitle('GameTracker')
-        self.setMinimumSize(800, 600)
-        self._build_ui()
+        self.resize(1000, 650)
+        self.setMinimumSize(820, 540)
 
-    def _build_ui(self):
-        central = QWidget()
-        central.setStyleSheet('background: #13131f;')
-        self.setCentralWidget(central)
-
-        layout = QVBoxLayout(central)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-
-        layout.addWidget(self._build_navbar())
+        root = QWidget()
+        root.setObjectName('root')
+        self.setCentralWidget(root)
+        h = QHBoxLayout(root)
+        h.setContentsMargins(0, 0, 0, 0)
+        h.setSpacing(0)
 
         self.stack = QStackedWidget()
-        self.stack.setStyleSheet('background: #13131f;')
+        pages = [('Dashboard', Dashboard(monitor)), ('Jogos', GamesPage(monitor)), ('Histórico', HistoryPage())]
 
-        self.dashboard = Dashboard(self.monitor)
-        self.games_list = GamesList(self.monitor)
-        self.history = History()
+        sidebar = QWidget()
+        sidebar.setObjectName('sidebar')
+        sidebar.setFixedWidth(210)
+        v = QVBoxLayout(sidebar)
+        v.setContentsMargins(14, 22, 14, 18)
+        v.setSpacing(4)
 
-        self.stack.addWidget(self.dashboard)
-        self.stack.addWidget(self.games_list)
-        self.stack.addWidget(self.history)
+        brand = QHBoxLayout()
+        icon = label('')
+        icon.setPixmap(app_icon().pixmap(30, 30))
+        brand.addWidget(icon)
+        brand.addWidget(label('GameTracker', 'h2'))
+        brand.addStretch()
+        v.addLayout(brand)
+        v.addSpacing(22)
 
-        layout.addWidget(self.stack)
+        group = QButtonGroup(self)
+        for i, (title, page) in enumerate(pages):
+            btn = QPushButton(title)
+            btn.setObjectName('nav')
+            btn.setCheckable(True)
+            btn.setChecked(i == 0)
+            group.addButton(btn, i)
+            v.addWidget(btn)
+            self.stack.addWidget(page)
+        group.idClicked.connect(self.stack.setCurrentIndex)
+        self.stack.currentChanged.connect(self._shown)
 
-    def _build_navbar(self):
-        navbar = QWidget()
-        navbar.setStyleSheet('background: #1e1e2e; border-bottom: 1px solid #2a2a3e;')
-        navbar.setFixedHeight(50)
+        v.addStretch()
+        self.status = label('', 'muted')
+        v.addWidget(self.status)
 
-        layout = QHBoxLayout(navbar)
-        layout.setContentsMargins(20, 0, 20, 0)
-        layout.setSpacing(8)
+        h.addWidget(sidebar)
+        h.addWidget(self.stack, 1)
 
-        btn_style = '''
-            QPushButton {
-                background: transparent;
-                color: #888;
-                border: none;
-                padding: 6px 14px;
-                font-size: 13px;
-                border-radius: 6px;
-            }
-            QPushButton:hover { background: #2a2a3e; color: #fff; }
-        '''
+        timer = QTimer(self)
+        timer.timeout.connect(self._status)
+        timer.start(1000)
+        self._status()
 
-        self.btn_dashboard = QPushButton('Dashboard')
-        self.btn_dashboard.setStyleSheet(btn_style)
-        self.btn_dashboard.clicked.connect(lambda: self._navigate(0))
+    def _shown(self, i):
+        page = self.stack.widget(i)
+        if hasattr(page, 'refresh'):
+            page.refresh()
 
-        self.btn_games = QPushButton('Jogos')
-        self.btn_games.setStyleSheet(btn_style)
-        self.btn_games.clicked.connect(lambda: self._navigate(1))
+    def _status(self):
+        n = len(self.monitor.sessions)
+        self.status.setText(f'● {n} jogo{"s" if n != 1 else ""} ativo{"s" if n != 1 else ""}' if n
+                            else '○ Monitorando…')
 
-        self.btn_history = QPushButton('Histórico')
-        self.btn_history.setStyleSheet(btn_style)
-        self.btn_history.clicked.connect(lambda: self._navigate(2))
-
-        title = QPushButton('GameTracker')
-        title.setStyleSheet('''
-            QPushButton {
-                background: transparent;
-                color: #7c3aed;
-                border: none;
-                font-size: 15px;
-                font-weight: bold;
-            }
-        ''')
-
-        layout.addWidget(title)
-        layout.addStretch()
-        layout.addWidget(self.btn_dashboard)
-        layout.addWidget(self.btn_games)
-        layout.addWidget(self.btn_history)
-
-        return navbar
-
-    def _navigate(self, index):
-        self.stack.setCurrentIndex(index)
-
-    def closeEvent(self, event):
+    def closeEvent(self, event):  # fechar a janela só esconde; "Sair" fica no ícone da bandeja
         event.ignore()
         self.hide()

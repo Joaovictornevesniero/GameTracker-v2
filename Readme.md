@@ -1,54 +1,33 @@
-GameTracker
+# GameTracker
 
-Rastreador universal de tempo de gameplay para Windows.
+Rastreador de tempo de jogo para Windows. Detecta o jogo pelo processo e conta o tempo enquanto ele está aberto.
+Funciona com jogos normais (`.exe`) e com **emuladores**, separando cada ROM/ISO (GBA, DS, PS1/PS2, etc.).
 
-Registra automaticamente sessões de jogo independente da plataforma — Steam, Epic, GOG, emuladores, jogos diretos por .exe — com detecção de AFK e foco de janela para medir tempo real de jogo, não apenas tempo de execução.
-
-Stack
-1. Python 3.12+
-2. PySide6 (interface)
-3. SQLite (banco local)
-4. psutil (monitoramento de processos)
-5. pywin32 (integração Windows)
-
-
-Funcionalidades:
-1. Detecção automática de jogos por processo (.exe)
-2. Cálculo de tempo real com desconto de AFK
-3. Histórico de sessões por jogo
-4. Dashboard com sessões ativas em tempo real
-5. Suporte a múltiplos jogos simultâneos
-6. Início automático com o Windows (opcional)
-
-
-Instalação
-
-1. Clone o repositório
-
-git clone https://github.com/seu-usuario/gametracker.git
-cd gametracker
-
-2. Crie e ative o ambiente virtual
-
+## Rodar
+```
 python -m venv venv
 venv\Scripts\activate
-
-3. Instale as dependências
-
 pip install -r requirements.txt
+python main.py
+```
+Gerar o `.exe`: `pip install pyinstaller` e depois `pyinstaller GameTracker.spec` (sai em `dist\`).
+O banco `gametracker.db` fica ao lado do `.exe` (ou do `main.py`).
 
-4. Rode o projeto
+## Como adicionar um jogo
+- **Jogo normal:** informe o `.exe`.
+- **Emulador:** informe o `.exe` do emulador **e** a ROM/ISO. Abra o jogo no emulador e use
+  **Detectar jogo aberto** para preencher sozinho.
 
-python main/Main.py
+A ROM é procurada na linha de comando do processo e no título das janelas dele. Se o emulador mostra FPS ou
+outras coisas variáveis no título, deixe no campo ROM/ISO só um trecho fixo (o nome do jogo).
+Se houver um cadastro só com o `.exe` e outro com ROM para o mesmo emulador, a ROM tem prioridade.
 
-Estrutura
-
-gametracker/
-├── database/       # Banco de dados e queries
-├── monitor/        # Lógica de rastreamento em segundo plano
-├── ui/             # Interface gráfica (PySide6)
-└── main/           # Ponto de entrada do app
-
-Status
-
-🚧 Em desenvolvimento — v0.1
+## Estrutura
+```
+main.py          entrada, bandeja, instância única
+monitor.py       thread que detecta jogos e grava sessões
+rom.py           varredura de processos e identificação da ROM
+db.py            SQLite, migração do banco antigo, consultas
+startup.py       iniciar com o Windows
+ui/              tema + Dashboard, Jogos, Histórico, diálogo de adicionar
+```

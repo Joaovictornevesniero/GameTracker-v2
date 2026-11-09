@@ -1,157 +1,113 @@
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QScrollArea
+from datetime import date, timedelta
+
 from PySide6.QtCore import QTimer
-from database.game_repository import get_today_seconds_by_game
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QVBoxLayout
+
+import db
+from ui.common import Page, clock, empty_state, human, label
 
 
-class GameBlock(QFrame):
-    """Bloco com 3 cards para um jogo ativo. Um bloco por jogo."""
-
-    def __init__(self):
+class Stat(QFrame):
+    def __init__(self, title):
         super().__init__()
-        self.setStyleSheet('background: transparent;')
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
-
-        cards_layout = QHBoxLayout()
-        cards_layout.setSpacing(12)
-
-        self.card_jogando = self._make_card('Jogando agora')
-        self.card_sessao  = self._make_card('Tempo da sessão')
-        self.card_hoje    = self._make_card('Tempo hoje')
-
-        cards_layout.addWidget(self.card_jogando)
-        cards_layout.addWidget(self.card_sessao)
-        cards_layout.addWidget(self.card_hoje)
-
-        layout.addLayout(cards_layout)
-
-    def _make_card(self, title):
-        card = QFrame()
-        card.setFrameShape(QFrame.StyledPanel)
-        card.setStyleSheet('''
-            QFrame {
-                background: #1e1e2e;
-                border-radius: 10px;
-                padding: 10px;
-            }
-        ''')
-        inner = QVBoxLayout(card)
-
-        title_label = QLabel(title)
-        title_label.setStyleSheet('color: #888; font-size: 13px;')
-
-        value_label = QLabel('--')
-        value_label.setStyleSheet('color: #fff; font-size: 24px; font-weight: bold;')
-        value_label.setObjectName('value')
-
-        inner.addWidget(title_label)
-        inner.addWidget(value_label)
-        return card
-
-    def _val(self, card):
-        return card.findChild(QLabel, 'value')
-
-    def update_data(self, game_name, session_seconds, hoje_seconds):
-        self._val(self.card_jogando).setText(game_name)
-        self._val(self.card_sessao).setText(self._fmt(session_seconds))
-        self._val(self.card_hoje).setText(self._fmt(hoje_seconds))
-
-    def clear(self):
-        self._val(self.card_jogando).setText('--')
-        self._val(self.card_sessao).setText('--')
-        self._val(self.card_hoje).setText('--')
-
-    def _fmt(self, seconds):
-        h = seconds // 3600
-        m = (seconds % 3600) // 60
-        s = seconds % 60
-        return f'{h:02d}:{m:02d}:{s:02d}'
+        self.setObjectName('card')
+        v = QVBoxLayout(self)
+        v.setContentsMargins(18, 14, 18, 14)
+        v.setSpacing(2)
+        v.addWidget(label(title, 'muted'))
+        self.value = label('0s', 'mid')
+        v.addWidget(self.value)
 
 
-class Dashboard(QWidget):
+class LiveCard(QFrame):
+    """Um jogo em execução: tempo da sessão e total de hoje."""
+
+    def __init__(self, session):
+        super().__init__()
+        self.setObjectName('livecard')
+        self.session = session
+        g = session.game
+        self.base = db.total_seconds(since=date.today(), game_id=g['id'], exclude=[session.id])
+
+        h = QHBoxLayout(self)
+        h.setContentsMargins(22, 18, 22, 18)
+        h.setSpacing(24)
+
+        left = QVBoxLayout()
+        left.setSpacing(4)
+        left.addWidget(label('● JOGANDO AGORA', 'live'))
+        left.addWidget(label(g['name'], 'h2'))
+        sub = '  ·  '.join(x for x in (g['platform'], g['rom'] or g['executable']) if x)
+        left.addWidget(label(sub, 'muted'))
+        h.addLayout(left, 1)
+
+        self.clock = label('00:00:00', 'big')
+        self.today = label('', 'big')
+        for title, value in (('Sessão', self.clock), ('Hoje', self.today)):
+            col = QVBoxLayout()
+            col.setSpacing(0)
+            col.addWidget(label(title, 'muted'))
+            col.addWidget(value)
+            h.addLayout(col)
+        self.refresh()
+
+    def refresh(self):
+        self.clock.setText(clock(self.session.seconds))
+        self.today.setText(human(self.base + self.session.seconds))
+
+
+class Dashboard(Page):
     def __init__(self, monitor):
-        super().__init__()
+        super().__init__('Dashboard')
         self.monitor = monitor
-        self._blocks = {}  # game_id -> GameBlock
-        self._empty_block = None
-        self._build_ui()
-        self._start_timer()
+        self.cards = {}
+        self._base = None
+        self._tick = 0
 
-    def _build_ui(self):
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(20, 20, 20, 20)
-        main_layout.setSpacing(20)
+        row = QHBoxLayout()
+        row.setSpacing(12)
+        self.stats = {}
+        for key, title in (('today', 'Hoje'), ('week', 'Últimos 7 dias'), ('all', 'Total')):
+            self.stats[key] = Stat(title)
+            row.addWidget(self.stats[key])
+        self.top.addLayout(row)
+        self.top.addSpacing(6)
+        self.top.addWidget(label('EM EXECUÇÃO', 'section'))
 
-        title = QLabel('Dashboard')
-        title.setStyleSheet('font-size: 22px; font-weight: bold; color: #fff;')
-        main_layout.addWidget(title)
+        self.empty = empty_state('Nenhum jogo em execução',
+                                 'Abra um jogo cadastrado e ele aparece aqui automaticamente.')
+        self.add(self.empty)
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setStyleSheet('QScrollArea { border: none; background: transparent; }')
-
-        self.content = QWidget()
-        self.content.setStyleSheet('background: transparent;')
-        self.blocks_layout = QVBoxLayout(self.content)
-        self.blocks_layout.setSpacing(20)
-        self.blocks_layout.addStretch()
-
-        scroll.setWidget(self.content)
-        main_layout.addWidget(scroll)
-
-        # Bloco vazio inicial
-        self._show_empty()
-
-    def _show_empty(self):
-        if self._empty_block is None:
-            self._empty_block = GameBlock()
-            self.blocks_layout.insertWidget(0, self._empty_block)
-
-    def _hide_empty(self):
-        if self._empty_block is not None:
-            self.blocks_layout.removeWidget(self._empty_block)
-            self._empty_block.deleteLater()
-            self._empty_block = None
-
-    def _start_timer(self):
-        self.timer = QTimer()
-        self.timer.timeout.connect(self._update)
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.update_view)
         self.timer.start(1000)
 
-    def _update(self):
-        active    = self.monitor.active_sessions
-        active_ids = set(active.keys())
-        block_ids  = set(self._blocks.keys())
+    def update_view(self):
+        sessions = self.monitor.sessions  # dicionário substituído por inteiro pela thread: leitura segura
 
-        # Remove blocos de jogos que fecharam
-        for gid in block_ids - active_ids:
-            block = self._blocks.pop(gid)
-            self.blocks_layout.removeWidget(block)
-            block.deleteLater()
+        for gid in [g for g, c in self.cards.items() if sessions.get(g) is not c.session]:
+            card = self.cards.pop(gid)
+            card.setParent(None)
+            card.deleteLater()
+            self._base = None
+        for gid, s in sessions.items():
+            if gid not in self.cards:
+                self.cards[gid] = LiveCard(s)
+                self.add(self.cards[gid])
+                self._base = None
+        self.empty.setVisible(not self.cards)
 
-        # Cria blocos para jogos novos
-        for gid in active_ids - block_ids:
-            block = GameBlock()
-            self.blocks_layout.insertWidget(self.blocks_layout.count() - 1, block)
-            self._blocks[gid] = block
-
-        # Mostra ou esconde bloco vazio
-        if active_ids:
-            self._hide_empty()
-        else:
-            self._show_empty()
-
-        # Atualiza valores
-        for gid, block in self._blocks.items():
-            session = active[gid]
-            hoje = (
-                get_today_seconds_by_game(gid)
-                + int(session.raw_seconds - session.afk_seconds)
-            )
-            block.update_data(
-                session.game['name'],
-                int(session.raw_seconds),
-                hoje
-            )
+        self._tick += 1
+        if self._base is None or self._tick % 30 == 0:
+            ids = [s.id for s in sessions.values()]
+            today = date.today()
+            self._base = {
+                'today': db.total_seconds(since=today, exclude=ids),
+                'week': db.total_seconds(since=today - timedelta(days=6), exclude=ids),
+                'all': db.total_seconds(exclude=ids),
+            }
+        live = sum(s.seconds for s in sessions.values())
+        for key, stat in self.stats.items():
+            stat.value.setText(human(self._base[key] + live))
+        for card in self.cards.values():
+            card.refresh()

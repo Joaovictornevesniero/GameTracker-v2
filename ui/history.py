@@ -1,122 +1,44 @@
-from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout,
-                                QLabel, QFrame, QScrollArea, QComboBox)
-from PySide6.QtCore import Qt
-from database.game_repository import get_all_games
-from database.db import connect
+from PySide6.QtWidgets import QComboBox
+
+import db
+from ui.common import Page, empty_state, fmt_date, human, label, row
+
+MAX_ROWS = 150
 
 
-class SessionCard(QFrame):
-    def __init__(self, session):
-        super().__init__()
-        self.setFrameShape(QFrame.StyledPanel)
-        self.setStyleSheet('''
-            QFrame {
-                background: #1e1e2e;
-                border-radius: 10px;
-                padding: 8px;
-            }
-        ''')
-        layout = QHBoxLayout(self)
-
-        date_label = QLabel(session['started_at'][:16].replace('T', ' '))
-        date_label.setStyleSheet('color: #888; font-size: 12px;')
-
-        valid = session['valid_seconds']
-        time_label = QLabel(self._format(valid))
-        time_label.setStyleSheet('color: #fff; font-size: 14px; font-weight: bold;')
-
-        layout.addWidget(date_label)
-        layout.addStretch()
-        layout.addWidget(time_label)
-
-    def _format(self, seconds):
-        h = seconds // 3600
-        m = (seconds % 3600) // 60
-        s = seconds % 60
-        return f'{h:02d}:{m:02d}:{s:02d}'
-
-
-class History(QWidget):
+class HistoryPage(Page):
     def __init__(self):
-        super().__init__()
-        self._build_ui()
+        combo = QComboBox()
+        combo.setMinimumWidth(240)
+        super().__init__('Histórico', combo)
+        self.combo = combo
+        self.summary = label('', 'muted')
+        self.top.addWidget(self.summary)
+        combo.currentIndexChanged.connect(self.load)
 
-    def _build_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(16)
-
-        title = QLabel('Histórico')
-        title.setStyleSheet('font-size: 22px; font-weight: bold; color: #fff;')
-        layout.addWidget(title)
-
-        self.combo = QComboBox()
-        self.combo.setStyleSheet('''
-            QComboBox {
-                background: #1e1e2e;
-                color: #fff;
-                border: 1px solid #2a2a3e;
-                border-radius: 8px;
-                padding: 6px 12px;
-                font-size: 13px;
-            }
-            QComboBox::drop-down {
-                border: none;
-            }
-            QComboBox QAbstractItemView {
-                background: #1e1e2e;
-                color: #fff;
-                selection-background-color: #7c3aed;
-                selection-color: #fff;
-                border: 1px solid #2a2a3e;
-                border-radius: 8px;
-                padding: 4px;
-            }
-        ''')
-        self.combo.currentIndexChanged.connect(self._load_sessions)
-        layout.addWidget(self.combo)
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setStyleSheet('QScrollArea { border: none; background: transparent; }')
-
-        self.cards_widget = QWidget()
-        self.cards_widget.setStyleSheet('background: transparent;')
-        self.cards_layout = QVBoxLayout(self.cards_widget)
-        self.cards_layout.setSpacing(8)
-        self.cards_layout.addStretch()
-
-        scroll.setWidget(self.cards_widget)
-        layout.addWidget(scroll)
-
-        self._load_games()
-
-    def _load_games(self):
-        self.games = get_all_games()
+    def refresh(self):
+        current = self.combo.currentData()
+        self.combo.blockSignals(True)
         self.combo.clear()
-        for game in self.games:
-            self.combo.addItem(game['name'], game['id'])
+        self.combo.addItem('Todos os jogos', None)
+        for g in sorted(db.games(), key=lambda g: g['name'].lower()):
+            self.combo.addItem(g['name'], g['id'])
+        self.combo.setCurrentIndex(self.combo.findData(current) if current is not None else 0)
+        if self.combo.currentIndex() < 0:
+            self.combo.setCurrentIndex(0)
+        self.combo.blockSignals(False)
+        self.load()
 
-    def _load_sessions(self):
-        while self.cards_layout.count() > 1:
-            item = self.cards_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-
-        game_id = self.combo.currentData()
-        if game_id is None:
+    def load(self):
+        self.clear()
+        rows = db.sessions_list(self.combo.currentData())
+        n = len(rows)
+        self.summary.setText(f'{n} sessão · {human(sum(r["seconds"] or 0 for r in rows))}' if n == 1
+                             else f'{n} sessões · {human(sum(r["seconds"] or 0 for r in rows))}')
+        if not rows:
+            self.add(empty_state('Sem sessões ainda', 'As sessões aparecem aqui quando o jogo é fechado.'))
             return
-
-        conn = connect()
-        cursor = conn.execute(
-            '''SELECT * FROM sessions
-               WHERE game_id = ? AND ended_at IS NOT NULL
-               ORDER BY started_at DESC''',
-            (game_id,)
-        )
-        sessions = cursor.fetchall()
-        conn.close()
-
-        for session in sessions:
-            card = SessionCard(session)
-            self.cards_layout.insertWidget(self.cards_layout.count() - 1, card)
+        for r in rows[:MAX_ROWS]:
+            self.add(row(r['name'], fmt_date(r['started_at']), human(r['seconds'] or 0)))
+        if n > MAX_ROWS:
+            self.add(label(f'Mostrando as {MAX_ROWS} mais recentes.', 'muted'))
