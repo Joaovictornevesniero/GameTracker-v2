@@ -3,15 +3,17 @@
 Rastreador de tempo de jogo para Windows. Detecta o jogo pelo processo e conta o tempo enquanto ele está aberto.
 Funciona com jogos normais (`.exe`) e com **emuladores**, separando cada ROM/ISO (GBA, DS, PS1/PS2, etc.).
 
-## Rodar
+## Baixar o .exe
+Acesse o link: https://github.com/Joaovictornevesniero/GameTracker-v2/releases
+Baixe a versão mais recente
+
+## Para devs
 ```
 python -m venv venv
 venv\Scripts\activate
 pip install -r requirements.txt
 python main.py
 ```
-Gerar o `.exe`: `pip install pyinstaller` e depois `pyinstaller GameTracker.spec` (sai em `dist\`).
-O banco `gametracker.db` fica ao lado do `.exe` (ou do `main.py`).
 
 ## Como adicionar um jogo
 - **Jogo normal:** informe o `.exe`.
